@@ -1,0 +1,33 @@
+name: 毎朝スケジュール通知
+
+on:
+  schedule:
+    # 毎朝 8:00 JST = 23:00 UTC (前日)
+    - cron: '0 23 * * *'
+  workflow_dispatch:  # 手動テスト用
+
+jobs:
+  send-schedule:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Send daily schedule
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          TIMEZONE: Asia/Tokyo
+        run: python scripts/daily_schedule.py
