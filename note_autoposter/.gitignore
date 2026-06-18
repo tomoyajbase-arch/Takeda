@@ -1,0 +1,6 @@
+.env
+data/
+thumbnails/
+__pycache__/
+*.pyc
+.playwright/
