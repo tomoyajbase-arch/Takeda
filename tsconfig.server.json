@@ -4,10 +4,10 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "esModuleInterop": true,
-    "strict": true,
-    "skipLibCheck": true,
     "outDir": "dist-server",
-    "rootDir": "server"
+    "rootDir": "server",
+    "strict": true,
+    "skipLibCheck": true
   },
   "include": ["server"]
 }
