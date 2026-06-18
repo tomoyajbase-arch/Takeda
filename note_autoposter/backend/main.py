@@ -18,7 +18,8 @@ from database import (
     init_db, save_article, update_article, get_article,
     list_articles, save_schedule, list_schedules, delete_schedule,
 )
-from content_gen import generate_article_from_scratch, generate_article_idea
+from content_gen import generate_article_from_scratch, generate_article_idea, generate_free_funnel_article, score_article_quality
+from market_scraper import get_market_research, FALLBACK_RESEARCH
 from thumbnail import generate_thumbnail
 from note_poster import post_to_note
 from scheduler import get_scheduler, start_scheduler, stop_scheduler, add_schedule, remove_schedule
@@ -58,6 +59,8 @@ app.mount("/thumbnails", StaticFiles(directory=str(THUMBNAILS_DIR)), name="thumb
 class GenerateRequest(BaseModel):
     topic: str = ""
     price: int = 500
+    with_free_funnel: bool = True
+    skip_market_scrape: bool = False
 
 class ArticleUpdateRequest(BaseModel):
     title: str | None = None
@@ -105,21 +108,73 @@ async def api_generate_article(req: GenerateRequest, background_tasks: Backgroun
     })
 
     async def _gen():
+        import json as _json
         try:
-            article = generate_article_from_scratch(req.topic, req.price)
+            # ① リアルタイム市場調査
+            market_data = None
+            if not req.skip_market_scrape:
+                await update_article(article_id, {"free_content": "市場調査中..."})
+                try:
+                    market_data = await get_market_research()
+                except Exception:
+                    market_data = FALLBACK_RESEARCH
+
+            # ② 記事生成（品質自動チェック付き）
+            await update_article(article_id, {"free_content": "記事を生成中..."})
+            article = generate_article_from_scratch(
+                req.topic, req.price,
+                market_data=market_data,
+                auto_quality_check=True,
+            )
+
+            # ③ サムネイル生成
             thumb_path = generate_thumbnail(
                 article.get("thumbnail_copy", article["title"][:18]),
                 article.get("thumbnail_sub", ""),
             )
+
+            quality = article.get("quality_score", {})
             await update_article(article_id, {
                 "title": article["title"],
                 "free_content": article["free_content"],
                 "paid_content": article["paid_content"],
                 "price": article["price"],
                 "thumbnail_path": thumb_path,
-                "status": "draft",
-                "metadata": __import__("json").dumps(article.get("metadata", {}), ensure_ascii=False),
+                "status": "review",  # 人間レビュー待ち
+                "metadata": _json.dumps({
+                    **article.get("metadata", {}),
+                    "quality_score": quality,
+                    "thumbnail_copy": article.get("thumbnail_copy", ""),
+                    "thumbnail_sub": article.get("thumbnail_sub", ""),
+                }, ensure_ascii=False),
             })
+
+            # ④ 無料ファネル記事を並行生成
+            if req.with_free_funnel:
+                try:
+                    free_article = generate_free_funnel_article(article)
+                    free_thumb = generate_thumbnail(
+                        free_article.get("thumbnail_copy", "無料公開"),
+                        free_article.get("thumbnail_sub", ""),
+                        scheme_index=2,
+                    )
+                    await save_article({
+                        "title": free_article["title"],
+                        "free_content": free_article["content"],
+                        "paid_content": "",
+                        "price": 0,
+                        "thumbnail_path": free_thumb,
+                        "status": "review",
+                        "metadata": _json.dumps({
+                            "article_type": "free_funnel",
+                            "linked_paid_id": article_id,
+                            "linked_paid_title": article["title"],
+                            "cta_to_paid": free_article.get("cta_to_paid", ""),
+                        }, ensure_ascii=False),
+                    })
+                except Exception as e:
+                    logger.warning(f"Free funnel generation failed: {e}")
+
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             await update_article(article_id, {"status": "error", "free_content": str(e)})
@@ -143,6 +198,49 @@ async def api_regenerate_thumbnail(article_id: int, req: ThumbnailRequest):
     thumb_path = generate_thumbnail(req.main_copy, req.sub_copy, scheme_index=req.scheme_index)
     await update_article(article_id, {"thumbnail_path": thumb_path})
     return {"thumbnail_path": thumb_path}
+
+@app.post("/api/articles/{article_id}/approve")
+async def api_approve_article(article_id: int):
+    """人間レビュー後に承認→投稿可能状態にする"""
+    a = await get_article(article_id)
+    if not a:
+        raise HTTPException(404)
+    if a["status"] not in ("review", "draft"):
+        raise HTTPException(400, f"Cannot approve article in status: {a['status']}")
+    await update_article(article_id, {"status": "draft"})
+    return {"status": "draft", "message": "承認しました。投稿ボタンで投稿できます。"}
+
+@app.post("/api/articles/{article_id}/reject")
+async def api_reject_article(article_id: int):
+    """レビューで却下→再生成フラグを立てる"""
+    await update_article(article_id, {"status": "rejected"})
+    return {"status": "rejected"}
+
+@app.get("/api/articles/{article_id}/quality")
+async def api_quality_score(article_id: int):
+    """記事の品質スコアを（再）計算して返す"""
+    a = await get_article(article_id)
+    if not a:
+        raise HTTPException(404)
+    score = score_article_quality(a)
+    import json as _json
+    meta = {}
+    try:
+        meta = _json.loads(a.get("metadata") or "{}")
+    except Exception:
+        pass
+    meta["quality_score"] = score
+    await update_article(article_id, {"metadata": _json.dumps(meta, ensure_ascii=False)})
+    return score
+
+@app.get("/api/market-research")
+async def api_market_research():
+    """リアルタイム市場調査を実行して返す"""
+    try:
+        data = await get_market_research()
+        return data
+    except Exception as e:
+        return {**FALLBACK_RESEARCH, "error": str(e)}
 
 @app.post("/api/articles/post")
 async def api_post_article(req: PostRequest, background_tasks: BackgroundTasks):

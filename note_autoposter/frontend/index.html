@@ -6,22 +6,13 @@
   <title>Note Autoposter</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: { note: '#41c9b4' }
-        }
-      }
-    }
+    tailwind.config = { theme: { extend: { colors: { note: '#41c9b4' } } } }
   </script>
   <style>
-    .prose { max-width: none; }
     .tab-active { border-bottom: 3px solid #41c9b4; color: #41c9b4; }
-    .status-generating { animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
     textarea { font-family: inherit; }
     .article-card:hover { transform: translateY(-2px); transition: transform .2s; }
-    mark { background: #41c9b420; color: inherit; }
+    .score-bar { transition: width .6s ease; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
@@ -30,9 +21,12 @@
 <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
   <div class="flex items-center gap-3">
     <div class="w-8 h-8 rounded-full bg-note flex items-center justify-center text-gray-900 font-bold text-sm">N</div>
-    <h1 class="font-bold text-lg">Note Autoposter</h1>
+    <h1 class="font-bold text-lg hidden sm:block">Note Autoposter</h1>
   </div>
-  <div class="flex gap-2">
+  <div class="flex gap-2 items-center">
+    <span id="review-badge" class="hidden bg-yellow-600 text-yellow-100 text-xs px-2 py-1 rounded-full cursor-pointer" onclick="showTab('list')">
+      レビュー待ち <span id="review-count">0</span>件
+    </span>
     <a href="https://note.com/tasty_hare849" target="_blank"
        class="text-xs text-gray-400 hover:text-note border border-gray-700 rounded px-2 py-1">
       マイnote ↗
@@ -41,11 +35,12 @@
 </header>
 
 <!-- Tabs -->
-<div class="bg-gray-900 border-b border-gray-800 px-4 flex gap-6 text-sm font-medium">
-  <button onclick="showTab('create')" id="tab-create" class="py-3 tab-active">記事作成</button>
-  <button onclick="showTab('list')" id="tab-list" class="py-3 text-gray-400 hover:text-white">記事一覧</button>
-  <button onclick="showTab('schedule')" id="tab-schedule" class="py-3 text-gray-400 hover:text-white">定期タスク</button>
-  <button onclick="showTab('settings')" id="tab-settings" class="py-3 text-gray-400 hover:text-white">設定</button>
+<div class="bg-gray-900 border-b border-gray-800 px-4 flex gap-4 text-sm font-medium overflow-x-auto">
+  <button onclick="showTab('create')" id="tab-create" class="py-3 tab-active whitespace-nowrap">記事作成</button>
+  <button onclick="showTab('list')" id="tab-list" class="py-3 text-gray-400 hover:text-white whitespace-nowrap">記事一覧</button>
+  <button onclick="showTab('schedule')" id="tab-schedule" class="py-3 text-gray-400 hover:text-white whitespace-nowrap">定期タスク</button>
+  <button onclick="showTab('market')" id="tab-market" class="py-3 text-gray-400 hover:text-white whitespace-nowrap">市場調査</button>
+  <button onclick="showTab('settings')" id="tab-settings" class="py-3 text-gray-400 hover:text-white whitespace-nowrap">設定</button>
 </div>
 
 <main class="max-w-4xl mx-auto px-4 py-6">
@@ -53,32 +48,84 @@
 <!-- ===== CREATE TAB ===== -->
 <div id="tab-create-content">
 
-  <!-- Step 1: Generate -->
   <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
     <h2 class="font-semibold text-base mb-4">① 記事を生成する</h2>
     <div class="flex flex-col sm:flex-row gap-3">
-      <input id="gen-topic" type="text" placeholder="テーマ（例：AIで副業、空欄でおまかせ）"
+      <input id="gen-topic" type="text" placeholder="テーマ（空欄=市場調査から自動選定）"
         class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note" />
       <input id="gen-price" type="number" value="500" min="0" step="100" placeholder="価格(円)"
         class="w-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note" />
-      <button onclick="generateArticle()"
-        class="bg-note text-gray-900 font-bold px-5 py-2 rounded-lg text-sm hover:opacity-90 whitespace-nowrap">
-        AI生成
-      </button>
     </div>
-    <p class="text-xs text-gray-500 mt-2">市場調査済みのブルーオーシャンニッチを自動選定→高品質記事を生成します</p>
+    <div class="flex flex-wrap gap-2 mt-3">
+      <label class="flex items-center gap-2 text-xs text-gray-400">
+        <input type="checkbox" id="gen-funnel" checked class="accent-note" />
+        無料ファネル記事も同時生成
+      </label>
+      <label class="flex items-center gap-2 text-xs text-gray-400">
+        <input type="checkbox" id="gen-skip-scrape" class="accent-note" />
+        市場調査をスキップ（高速）
+      </label>
+    </div>
+    <button onclick="generateArticle()"
+      class="mt-3 w-full sm:w-auto bg-note text-gray-900 font-bold px-6 py-2 rounded-lg text-sm hover:opacity-90">
+      AI生成（市場調査→記事→品質チェック）
+    </button>
+    <p class="text-xs text-gray-500 mt-2">生成後にレビュー画面が表示されます。承認後のみ投稿できます。</p>
   </section>
 
   <!-- Generation status -->
   <div id="gen-status" class="hidden bg-gray-900 rounded-xl p-5 mb-4 border border-gray-700">
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 mb-2">
       <div class="w-5 h-5 border-2 border-note border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-sm text-gray-300" id="gen-status-text">記事を生成中... (1〜2分かかります)</span>
+      <span class="text-sm text-gray-300" id="gen-status-text">処理中...</span>
+    </div>
+    <div class="flex gap-2 mt-2 flex-wrap text-xs text-gray-500">
+      <span id="step-scrape" class="px-2 py-1 rounded bg-gray-800">①市場調査</span>
+      <span>→</span>
+      <span id="step-gen" class="px-2 py-1 rounded bg-gray-800">②記事生成</span>
+      <span>→</span>
+      <span id="step-quality" class="px-2 py-1 rounded bg-gray-800">③品質チェック</span>
+      <span>→</span>
+      <span id="step-review" class="px-2 py-1 rounded bg-gray-800">④あなたがレビュー</span>
     </div>
   </div>
 
   <!-- Article Editor -->
   <div id="article-editor" class="hidden">
+
+    <!-- Quality Score Banner -->
+    <div id="quality-banner" class="hidden bg-gray-900 rounded-xl p-4 mb-4 border border-gray-800">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-semibold">品質スコア</span>
+        <span id="quality-score-text" class="text-xl font-bold text-note">--点</span>
+      </div>
+      <div class="w-full bg-gray-700 rounded-full h-2 mb-3">
+        <div id="quality-score-bar" class="bg-note h-2 rounded-full score-bar" style="width:0%"></div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-400 mb-3">
+        <div>再現性 <span id="q-repr" class="text-white font-medium">--</span>/25</div>
+        <div>購入価値 <span id="q-value" class="text-white font-medium">--</span>/25</div>
+        <div>トンマナ <span id="q-tone" class="text-white font-medium">--</span>/25</div>
+        <div>セールス力 <span id="q-sales" class="text-white font-medium">--</span>/25</div>
+      </div>
+      <div id="quality-issues" class="text-xs text-yellow-400 hidden"></div>
+    </div>
+
+    <!-- Review actions for "review" status -->
+    <div id="review-actions" class="hidden bg-yellow-900 border border-yellow-700 rounded-xl p-4 mb-4">
+      <p class="text-sm text-yellow-200 font-semibold mb-1">👁️ レビュー待ち — 内容を確認して承認または却下してください</p>
+      <p class="text-xs text-yellow-400 mb-3">承認しないと投稿できません。内容を編集後に承認もできます。</p>
+      <div class="flex gap-3">
+        <button onclick="approveArticle()"
+          class="bg-green-700 hover:bg-green-600 text-white font-bold px-5 py-2 rounded-lg text-sm">
+          ✅ 承認して投稿可能にする
+        </button>
+        <button onclick="rejectArticle()"
+          class="bg-red-900 hover:bg-red-800 text-red-200 px-4 py-2 rounded-lg text-sm">
+          ❌ 却下（再生成）
+        </button>
+      </div>
+    </div>
 
     <!-- Title -->
     <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
@@ -92,7 +139,8 @@
       <h3 class="text-sm font-semibold mb-3">② サムネイル</h3>
       <div class="flex flex-col sm:flex-row gap-4">
         <div class="flex-shrink-0">
-          <img id="thumb-preview" src="" alt="サムネイル" class="rounded-lg w-full sm:w-64 aspect-video object-cover bg-gray-800" />
+          <img id="thumb-preview" src="" alt="サムネイル"
+            class="rounded-lg w-full sm:w-64 aspect-video object-cover bg-gray-800" />
         </div>
         <div class="flex-1 flex flex-col gap-2">
           <input id="thumb-main" type="text" placeholder="メインコピー（20字以内）"
@@ -118,34 +166,34 @@
     <!-- Free content -->
     <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
       <h3 class="text-sm font-semibold mb-2">③ 無料部分（セールスレター）</h3>
-      <textarea id="edit-free" rows="10"
+      <textarea id="edit-free" rows="12"
         class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note resize-y"></textarea>
     </section>
 
     <!-- Paid content -->
     <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
       <h3 class="text-sm font-semibold mb-2">④ 有料部分（コアコンテンツ）</h3>
-      <textarea id="edit-paid" rows="14"
+      <textarea id="edit-paid" rows="16"
         class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note resize-y"></textarea>
     </section>
 
     <!-- Price & Post -->
     <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
       <h3 class="text-sm font-semibold mb-3">⑤ 投稿設定</h3>
-      <div class="flex flex-col sm:flex-row gap-3 items-end">
+      <div class="flex flex-col sm:flex-row gap-3 items-end flex-wrap">
         <div>
           <label class="text-xs text-gray-400 block mb-1">価格（0=無料）</label>
           <input id="edit-price" type="number" value="500" min="0" step="100"
             class="w-32 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note" />
         </div>
-        <div class="flex-1">
+        <div class="flex-1 min-w-48">
           <label class="text-xs text-gray-400 block mb-1">投稿予約日時（空欄=即時）</label>
           <input id="edit-scheduled" type="datetime-local"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-note" />
         </div>
         <button onclick="saveArticle()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">下書き保存</button>
-        <button onclick="postArticle()"
-          class="bg-note text-gray-900 font-bold px-6 py-2 rounded-lg text-sm hover:opacity-90">
+        <button onclick="postArticle()" id="post-btn"
+          class="bg-note text-gray-900 font-bold px-6 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
           noteに投稿 →
         </button>
       </div>
@@ -161,6 +209,12 @@
     <h2 class="font-semibold">記事一覧</h2>
     <button onclick="loadArticles()" class="text-xs text-gray-400 hover:text-white border border-gray-700 rounded px-2 py-1">更新</button>
   </div>
+  <div class="flex gap-2 mb-4 flex-wrap text-xs">
+    <button onclick="filterArticles('')" class="filter-btn bg-gray-700 px-3 py-1 rounded">すべて</button>
+    <button onclick="filterArticles('review')" class="filter-btn bg-yellow-800 px-3 py-1 rounded">レビュー待ち</button>
+    <button onclick="filterArticles('draft')" class="filter-btn bg-gray-700 px-3 py-1 rounded">下書き</button>
+    <button onclick="filterArticles('posted')" class="filter-btn bg-green-900 px-3 py-1 rounded">投稿済み</button>
+  </div>
   <div id="articles-list" class="space-y-3">
     <p class="text-gray-500 text-sm">読み込み中...</p>
   </div>
@@ -169,15 +223,20 @@
 <!-- ===== SCHEDULE TAB ===== -->
 <div id="tab-schedule-content" class="hidden">
   <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
-    <h2 class="font-semibold mb-4">定期自動投稿タスク追加</h2>
+    <h2 class="font-semibold mb-4">定期自動投稿タスク</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div>
-        <label class="text-xs text-gray-400 block mb-1">Cron式（例: 0 8 * * 1 = 毎週月曜8時）</label>
+        <label class="text-xs text-gray-400 block mb-1">Cron式</label>
         <input id="sched-cron" type="text" value="0 8 * * 1"
           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-note" />
+        <p class="text-xs text-gray-600 mt-1">
+          <span class="cursor-pointer hover:text-note" onclick="setCron('0 8 * * 1')">毎週月曜8時</span> ·
+          <span class="cursor-pointer hover:text-note" onclick="setCron('0 8 1 * *')">毎月1日8時</span> ·
+          <span class="cursor-pointer hover:text-note" onclick="setCron('0 8 * * *')">毎日8時</span>
+        </p>
       </div>
       <div>
-        <label class="text-xs text-gray-400 block mb-1">テーマ（空欄=AI自動選定）</label>
+        <label class="text-xs text-gray-400 block mb-1">テーマ（空欄=市場調査から自動選定）</label>
         <input id="sched-topic" type="text" placeholder="例: AIで副業"
           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-note" />
       </div>
@@ -193,22 +252,30 @@
         </button>
       </div>
     </div>
-    <div class="mt-3 text-xs text-gray-500">
-      よく使うパターン:
-      <span class="cursor-pointer hover:text-note ml-2" onclick="setCron('0 8 * * 1')">毎週月曜8時</span>
-      <span class="cursor-pointer hover:text-note ml-2" onclick="setCron('0 8 1 * *')">毎月1日8時</span>
-      <span class="cursor-pointer hover:text-note ml-2" onclick="setCron('0 8 * * *')">毎日8時</span>
-    </div>
+    <p class="text-xs text-gray-500 mt-3">※ 定期タスクで生成された記事もレビュー→承認→投稿の流れになります</p>
   </section>
-  <div id="schedules-list" class="space-y-3">
-    <p class="text-gray-500 text-sm">読み込み中...</p>
-  </div>
+  <div id="schedules-list" class="space-y-3"></div>
+</div>
+
+<!-- ===== MARKET TAB ===== -->
+<div id="tab-market-content" class="hidden">
+  <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold">リアルタイム市場調査</h2>
+      <button onclick="runMarketResearch()"
+        class="bg-note text-gray-900 font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90">
+        今すぐ調査
+      </button>
+    </div>
+    <p class="text-xs text-gray-500 mb-3">note.com/brainの売れ筋記事をリアルタイムでスクレイピングして市場トレンドを分析します</p>
+    <div id="market-result" class="text-sm text-gray-400">「今すぐ調査」ボタンを押してください</div>
+  </section>
 </div>
 
 <!-- ===== SETTINGS TAB ===== -->
 <div id="tab-settings-content" class="hidden">
   <section class="bg-gray-900 rounded-xl p-5 mb-4 border border-gray-800">
-    <h2 class="font-semibold mb-4">認証情報（.envファイルで設定推奨）</h2>
+    <h2 class="font-semibold mb-4">認証情報</h2>
     <div class="space-y-3">
       <div>
         <label class="text-xs text-gray-400 block mb-1">Anthropic API Key</label>
@@ -225,24 +292,21 @@
         <input type="password" id="set-note-pw" placeholder="パスワード"
           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-note" />
       </div>
-      <p class="text-xs text-gray-500">
-        これらの値は <code class="text-note">.env</code> ファイルに保存されます。<br />
-        <code class="text-note">note_autoposter/.env</code> に直接書くのが最も安全です。
-      </p>
       <button onclick="saveSettings()"
         class="bg-note text-gray-900 font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90">
-        設定を保存
+        保存（.envに書き込み）
       </button>
     </div>
   </section>
   <section class="bg-gray-900 rounded-xl p-5 border border-gray-800">
-    <h3 class="font-semibold mb-3 text-sm">クイックスタートガイド</h3>
+    <h3 class="font-semibold mb-3 text-sm">フロー説明</h3>
     <ol class="space-y-2 text-sm text-gray-400 list-decimal list-inside">
-      <li>上記の認証情報を設定する</li>
-      <li>「記事作成」タブでAI生成ボタンを押す（1〜2分）</li>
-      <li>生成された内容を確認・編集する</li>
-      <li>「noteに投稿」ボタンで自動ログイン＆投稿</li>
-      <li>「定期タスク」でcron設定すれば完全自動化</li>
+      <li>設定タブでAPIキー・note認証情報を入力</li>
+      <li>記事作成タブで「AI生成」→市場調査+記事生成+品質チェック（2〜3分）</li>
+      <li>品質スコアと記事内容を確認→「承認」で投稿可能に</li>
+      <li>「noteに投稿」→Playwrightが自動ログイン&投稿</li>
+      <li>無料ファネル記事も同時生成されるので、別途投稿してフォロワー獲得</li>
+      <li>定期タスクで完全自動化（ただしレビューは手動）</li>
     </ol>
   </section>
 </div>
@@ -252,51 +316,96 @@
 <script>
 const API = '';
 let currentArticleId = null;
+let currentStatus = null;
+let allArticles = [];
 
 // ── Tab switching ──────────────────────────────────────
 function showTab(name) {
-  ['create','list','schedule','settings'].forEach(t => {
+  ['create','list','schedule','market','settings'].forEach(t => {
     document.getElementById(`tab-${t}-content`).classList.add('hidden');
-    document.getElementById(`tab-${t}`).classList.remove('tab-active');
-    document.getElementById(`tab-${t}`).classList.add('text-gray-400');
+    const btn = document.getElementById(`tab-${t}`);
+    btn.classList.remove('tab-active');
+    btn.classList.add('text-gray-400');
   });
   document.getElementById(`tab-${name}-content`).classList.remove('hidden');
-  document.getElementById(`tab-${name}`).classList.add('tab-active');
-  document.getElementById(`tab-${name}`).classList.remove('text-gray-400');
+  const active = document.getElementById(`tab-${name}`);
+  active.classList.add('tab-active');
+  active.classList.remove('text-gray-400');
   if (name === 'list') loadArticles();
   if (name === 'schedule') loadSchedules();
+}
+
+// ── Review badge ───────────────────────────────────────
+async function updateReviewBadge() {
+  try {
+    const res = await fetch(`${API}/api/articles`);
+    const articles = await res.json();
+    const reviewCount = articles.filter(a => a.status === 'review').length;
+    const badge = document.getElementById('review-badge');
+    if (reviewCount > 0) {
+      badge.classList.remove('hidden');
+      document.getElementById('review-count').textContent = reviewCount;
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch(e) {}
 }
 
 // ── Generate article ───────────────────────────────────
 async function generateArticle() {
   const topic = document.getElementById('gen-topic').value;
   const price = parseInt(document.getElementById('gen-price').value) || 500;
+  const withFunnel = document.getElementById('gen-funnel').checked;
+  const skipScrape = document.getElementById('gen-skip-scrape').checked;
 
   document.getElementById('gen-status').classList.remove('hidden');
   document.getElementById('article-editor').classList.add('hidden');
+  setStepActive('step-scrape', !skipScrape);
 
   const res = await fetch(`${API}/api/articles/generate`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({topic, price}),
+    body: JSON.stringify({topic, price, with_free_funnel: withFunnel, skip_market_scrape: skipScrape}),
   });
   const data = await res.json();
   currentArticleId = data.article_id;
   pollStatus(data.article_id);
 }
 
+function setStepActive(id, active) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `px-2 py-1 rounded text-xs ${active ? 'bg-note text-gray-900 font-bold' : 'bg-gray-800 text-gray-500'}`;
+}
+
 async function pollStatus(id) {
   const res = await fetch(`${API}/api/articles/${id}/status`);
   const data = await res.json();
-  document.getElementById('gen-status-text').textContent =
-    `生成中... "${data.title || '...'}"`;
 
-  if (data.status === 'draft') {
+  const statusText = {
+    generating: '記事を生成中...',
+    review: 'レビュー待ち — 確認してください',
+    draft: '生成完了',
+    error: 'エラーが発生しました',
+  }[data.status] || data.status;
+
+  document.getElementById('gen-status-text').textContent = `${statusText}: "${data.title || '...'}"`;
+
+  if (data.status === 'generating') {
+    const text = data.title || '';
+    if (text.includes('市場調査')) setStepActive('step-scrape', true);
+    if (text.includes('生成中')) { setStepActive('step-scrape', false); setStepActive('step-gen', true); }
+    setTimeout(() => pollStatus(id), 3000);
+  } else if (data.status === 'review' || data.status === 'draft') {
+    setStepActive('step-gen', false);
+    setStepActive('step-quality', false);
+    setStepActive('step-review', true);
     document.getElementById('gen-status').classList.add('hidden');
     await loadArticleIntoEditor(id);
+    updateReviewBadge();
   } else if (data.status === 'error') {
     document.getElementById('gen-status').classList.add('hidden');
-    alert('生成エラーが発生しました。APIキーを確認してください。');
+    alert('生成エラー。APIキーを確認してください。');
   } else {
     setTimeout(() => pollStatus(id), 3000);
   }
@@ -305,6 +414,9 @@ async function pollStatus(id) {
 async function loadArticleIntoEditor(id) {
   const res = await fetch(`${API}/api/articles/${id}`);
   const a = await res.json();
+  currentArticleId = id;
+  currentStatus = a.status;
+
   document.getElementById('edit-title').value = a.title || '';
   document.getElementById('edit-free').value = a.free_content || '';
   document.getElementById('edit-paid').value = a.paid_content || '';
@@ -312,36 +424,107 @@ async function loadArticleIntoEditor(id) {
 
   let meta = {};
   try { meta = JSON.parse(a.metadata || '{}'); } catch(e) {}
+
   document.getElementById('thumb-main').value = meta.thumbnail_copy || a.title?.slice(0,18) || '';
   document.getElementById('thumb-sub').value = meta.thumbnail_sub || '';
 
   if (a.thumbnail_path) {
     const fname = a.thumbnail_path.split('/').pop();
-    document.getElementById('thumb-preview').src = `/thumbnails/${fname}`;
+    document.getElementById('thumb-preview').src = `/thumbnails/${fname}?t=${Date.now()}`;
+  }
+
+  // Quality score
+  const qs = meta.quality_score;
+  if (qs) {
+    showQualityScore(qs);
+  }
+
+  // Review actions
+  const reviewDiv = document.getElementById('review-actions');
+  const postBtn = document.getElementById('post-btn');
+  if (a.status === 'review') {
+    reviewDiv.classList.remove('hidden');
+    postBtn.disabled = true;
+  } else {
+    reviewDiv.classList.add('hidden');
+    postBtn.disabled = false;
   }
 
   document.getElementById('article-editor').classList.remove('hidden');
   document.getElementById('post-status').classList.add('hidden');
 }
 
+function showQualityScore(qs) {
+  const banner = document.getElementById('quality-banner');
+  banner.classList.remove('hidden');
+  const score = qs.total_score || 0;
+  document.getElementById('quality-score-text').textContent = `${score}点`;
+  document.getElementById('quality-score-bar').style.width = `${score}%`;
+  document.getElementById('quality-score-bar').className =
+    `h-2 rounded-full score-bar ${score >= 70 ? 'bg-note' : score >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`;
+  document.getElementById('q-repr').textContent = qs.reproducibility ?? '--';
+  document.getElementById('q-value').textContent = qs.purchase_value ?? '--';
+  document.getElementById('q-tone').textContent = qs.tone_match ?? '--';
+  document.getElementById('q-sales').textContent = qs.sales_letter ?? '--';
+
+  const issuesEl = document.getElementById('quality-issues');
+  if (qs.issues && qs.issues.length) {
+    issuesEl.classList.remove('hidden');
+    issuesEl.textContent = '⚠ ' + qs.issues.join(' / ');
+  } else {
+    issuesEl.classList.add('hidden');
+  }
+}
+
+// ── Review flow ────────────────────────────────────────
+async function approveArticle() {
+  if (!currentArticleId) return;
+  await saveArticle();
+  const res = await fetch(`${API}/api/articles/${currentArticleId}/approve`, {method:'POST'});
+  const data = await res.json();
+  currentStatus = 'draft';
+  document.getElementById('review-actions').classList.add('hidden');
+  document.getElementById('post-btn').disabled = false;
+  showToast('✅ 承認しました。投稿できます。');
+  updateReviewBadge();
+}
+
+async function rejectArticle() {
+  if (!currentArticleId) return;
+  if (!confirm('この記事を却下しますか？')) return;
+  await fetch(`${API}/api/articles/${currentArticleId}/reject`, {method:'POST'});
+  document.getElementById('article-editor').classList.add('hidden');
+  showToast('❌ 却下しました。再生成してください。');
+  updateReviewBadge();
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
 // ── Thumbnail ──────────────────────────────────────────
 async function regenerateThumbnail() {
   if (!currentArticleId) return;
-  const main_copy = document.getElementById('thumb-main').value;
-  const sub_copy = document.getElementById('thumb-sub').value;
-  const scheme_index = parseInt(document.getElementById('thumb-scheme').value);
-
   const res = await fetch(`${API}/api/articles/${currentArticleId}/thumbnail`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({article_id: currentArticleId, main_copy, sub_copy, scheme_index}),
+    body: JSON.stringify({
+      article_id: currentArticleId,
+      main_copy: document.getElementById('thumb-main').value,
+      sub_copy: document.getElementById('thumb-sub').value,
+      scheme_index: parseInt(document.getElementById('thumb-scheme').value),
+    }),
   });
   const data = await res.json();
   const fname = data.thumbnail_path.split('/').pop();
   document.getElementById('thumb-preview').src = `/thumbnails/${fname}?t=${Date.now()}`;
 }
 
-// ── Save draft ─────────────────────────────────────────
+// ── Save / Post ────────────────────────────────────────
 async function saveArticle() {
   if (!currentArticleId) return;
   await fetch(`${API}/api/articles/${currentArticleId}`, {
@@ -354,36 +537,37 @@ async function saveArticle() {
       price: parseInt(document.getElementById('edit-price').value) || 0,
     }),
   });
-  alert('下書きを保存しました');
+  showToast('保存しました');
 }
 
-// ── Post to note ───────────────────────────────────────
 async function postArticle() {
   if (!currentArticleId) return;
+  if (currentStatus === 'review') { alert('先に「承認」してください'); return; }
   await saveArticle();
 
-  const scheduled_at = document.getElementById('edit-scheduled').value || null;
   const statusEl = document.getElementById('post-status');
   statusEl.className = 'mt-3 p-3 rounded-lg text-sm bg-blue-900 text-blue-200';
-  statusEl.textContent = '投稿中... (Playwrightが自動でnoteにアクセスします)';
+  statusEl.textContent = '投稿中... (Playwrightがnoteに自動アクセス中)';
   statusEl.classList.remove('hidden');
 
-  const res = await fetch(`${API}/api/articles/post`, {
+  await fetch(`${API}/api/articles/post`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({article_id: currentArticleId, scheduled_at}),
+    body: JSON.stringify({
+      article_id: currentArticleId,
+      scheduled_at: document.getElementById('edit-scheduled').value || null,
+    }),
   });
-
   pollPostStatus(currentArticleId, statusEl);
 }
 
 async function pollPostStatus(id, statusEl) {
   const res = await fetch(`${API}/api/articles/${id}/status`);
   const data = await res.json();
-
   if (data.status === 'posted') {
     statusEl.className = 'mt-3 p-3 rounded-lg text-sm bg-green-900 text-green-200';
-    statusEl.innerHTML = `✅ 投稿完了！ <a href="${data.note_url}" target="_blank" class="underline">${data.note_url}</a>`;
+    statusEl.innerHTML = `✅ 投稿完了！ <a href="${data.note_url}" target="_blank" class="underline">${data.note_url || 'note.com'}</a>`;
+    updateReviewBadge();
   } else if (data.status === 'failed') {
     statusEl.className = 'mt-3 p-3 rounded-lg text-sm bg-red-900 text-red-200';
     statusEl.textContent = '❌ 投稿失敗。設定タブでnote認証情報を確認してください。';
@@ -393,36 +577,73 @@ async function pollPostStatus(id, statusEl) {
 }
 
 // ── Article list ───────────────────────────────────────
+let currentFilter = '';
 async function loadArticles() {
   const res = await fetch(`${API}/api/articles`);
-  const articles = await res.json();
-  const el = document.getElementById('articles-list');
+  allArticles = await res.json();
+  renderArticles();
+  updateReviewBadge();
+}
 
-  if (!articles.length) {
-    el.innerHTML = '<p class="text-gray-500 text-sm">まだ記事がありません</p>';
+function filterArticles(status) {
+  currentFilter = status;
+  renderArticles();
+}
+
+function renderArticles() {
+  const filtered = currentFilter
+    ? allArticles.filter(a => a.status === currentFilter)
+    : allArticles;
+  const el = document.getElementById('articles-list');
+  if (!filtered.length) {
+    el.innerHTML = '<p class="text-gray-500 text-sm">該当する記事がありません</p>';
     return;
   }
 
-  el.innerHTML = articles.map(a => {
-    const statusColor = {
+  el.innerHTML = filtered.map(a => {
+    const sc = {
       draft: 'bg-gray-700 text-gray-300',
-      generating: 'bg-yellow-900 text-yellow-300',
+      generating: 'bg-yellow-900 text-yellow-300 animate-pulse',
+      review: 'bg-yellow-700 text-yellow-100',
       posting: 'bg-blue-900 text-blue-300',
       posted: 'bg-green-900 text-green-300',
       failed: 'bg-red-900 text-red-300',
+      rejected: 'bg-red-900 text-red-400',
       error: 'bg-red-900 text-red-300',
     }[a.status] || 'bg-gray-700 text-gray-300';
+
+    const statusLabel = {
+      review: '👁 レビュー待ち',
+      draft: '下書き',
+      posted: '✅ 投稿済み',
+      generating: '生成中...',
+      posting: '投稿中...',
+      failed: '❌ 失敗',
+      rejected: '却下',
+      error: 'エラー',
+    }[a.status] || a.status;
+
+    let meta = {};
+    try { meta = JSON.parse(a.metadata || '{}'); } catch(e) {}
+    const isFunnel = meta.article_type === 'free_funnel';
+    const score = meta.quality_score?.total_score;
 
     return `
     <div class="bg-gray-900 rounded-xl p-4 border border-gray-800 article-card cursor-pointer"
          onclick="loadArticleById(${a.id})">
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
-          <p class="font-medium text-sm truncate">${a.title || '(無題)'}</p>
-          <p class="text-xs text-gray-500 mt-1">${a.created_at?.slice(0,16).replace('T',' ')} ·
-            ${a.price > 0 ? `¥${a.price}` : '無料'}</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            ${isFunnel ? '<span class="text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">無料ファネル</span>' : ''}
+            <p class="font-medium text-sm truncate">${a.title || '(無題)'}</p>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">
+            ${a.created_at?.slice(0,16).replace('T',' ')} ·
+            ${a.price > 0 ? `¥${a.price}` : '無料'}
+            ${score !== undefined ? `· 品質${score}点` : ''}
+          </p>
         </div>
-        <span class="text-xs px-2 py-1 rounded-full whitespace-nowrap ${statusColor}">${a.status}</span>
+        <span class="text-xs px-2 py-1 rounded-full whitespace-nowrap ${sc}">${statusLabel}</span>
       </div>
       ${a.note_url ? `<a href="${a.note_url}" target="_blank" class="text-xs text-note hover:underline mt-2 block" onclick="event.stopPropagation()">公開記事を見る →</a>` : ''}
     </div>`;
@@ -435,16 +656,44 @@ async function loadArticleById(id) {
   await loadArticleIntoEditor(id);
 }
 
+// ── Market research ────────────────────────────────────
+async function runMarketResearch() {
+  const el = document.getElementById('market-result');
+  el.innerHTML = '<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-note border-t-transparent rounded-full animate-spin"></div>調査中...</div>';
+  try {
+    const res = await fetch(`${API}/api/market-research`);
+    const data = await res.json();
+    const titles = data.note_trending || [];
+    el.innerHTML = `
+      <div class="mb-3 text-xs text-gray-400">
+        調査件数: ${data.total_scraped || 0}件 ·
+        平均価格: ¥${data.avg_price || '--'} ·
+        ${data.scraped_ok ? '✅ リアルタイム' : '⚠ フォールバック（スクレイピング失敗）'}
+      </div>
+      <div class="space-y-2">
+        ${titles.map(t => `
+          <div class="bg-gray-800 rounded p-3 text-xs">
+            <div class="font-medium text-sm">${t.title || '(タイトルなし)'}</div>
+            <div class="text-gray-400 mt-0.5">${t.source} · ¥${t.price || 0}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `<p class="text-red-400 text-sm">エラー: ${e.message}</p>`;
+  }
+}
+
 // ── Schedules ──────────────────────────────────────────
 async function addSchedule() {
-  const cron_expr = document.getElementById('sched-cron').value;
-  const topic = document.getElementById('sched-topic').value;
-  const price = parseInt(document.getElementById('sched-price').value) || 500;
-
   await fetch(`${API}/api/schedules`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({cron_expr, topic, price}),
+    body: JSON.stringify({
+      cron_expr: document.getElementById('sched-cron').value,
+      topic: document.getElementById('sched-topic').value,
+      price: parseInt(document.getElementById('sched-price').value) || 500,
+    }),
   });
   loadSchedules();
 }
@@ -453,18 +702,15 @@ async function loadSchedules() {
   const res = await fetch(`${API}/api/schedules`);
   const schedules = await res.json();
   const el = document.getElementById('schedules-list');
-
   if (!schedules.length) {
     el.innerHTML = '<p class="text-gray-500 text-sm">定期タスクがまだありません</p>';
     return;
   }
-
   el.innerHTML = schedules.map(s => `
     <div class="bg-gray-900 rounded-xl p-4 border border-gray-800 flex items-center justify-between gap-3">
       <div>
         <p class="text-sm font-medium">${s.topic || 'AI自動選定'}</p>
         <p class="text-xs text-gray-500 mt-1">Cron: <code class="text-note">${s.cron_expr}</code> · ¥${s.price}</p>
-        ${s.last_run ? `<p class="text-xs text-gray-600">最終実行: ${s.last_run.slice(0,16).replace('T',' ')}</p>` : ''}
       </div>
       <button onclick="deleteSchedule(${s.id})"
         class="text-red-400 hover:text-red-300 text-xs border border-red-900 rounded px-2 py-1">削除</button>
@@ -473,7 +719,7 @@ async function loadSchedules() {
 }
 
 async function deleteSchedule(id) {
-  if (!confirm('このスケジュールを削除しますか？')) return;
+  if (!confirm('削除しますか？')) return;
   await fetch(`${API}/api/schedules/${id}`, {method:'DELETE'});
   loadSchedules();
 }
@@ -482,24 +728,24 @@ function setCron(val) { document.getElementById('sched-cron').value = val; }
 
 // ── Settings ───────────────────────────────────────────
 async function saveSettings() {
+  const lines = [];
   const apiKey = document.getElementById('set-api-key').value;
   const email = document.getElementById('set-note-email').value;
   const pw = document.getElementById('set-note-pw').value;
-
-  const lines = [];
   if (apiKey) lines.push(`ANTHROPIC_API_KEY=${apiKey}`);
   if (email) lines.push(`NOTE_EMAIL=${email}`);
   if (pw) lines.push(`NOTE_PASSWORD=${pw}`);
-
   const res = await fetch(`${API}/api/settings`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({env_content: lines.join('\n')}),
   });
-  if (res.ok) {
-    alert('設定を.envに保存しました。サーバーを再起動してください。');
-  }
+  if (res.ok) showToast('設定を保存しました。サーバーを再起動してください。');
 }
+
+// ── Init ───────────────────────────────────────────────
+updateReviewBadge();
+setInterval(updateReviewBadge, 30000);
 </script>
 </body>
 </html>

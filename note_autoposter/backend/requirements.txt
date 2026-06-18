@@ -1,4 +1,5 @@
 fastapi==0.115.0
+beautifulsoup4==4.12.3
 uvicorn[standard]==0.30.6
 anthropic==0.34.2
 playwright==1.47.0
