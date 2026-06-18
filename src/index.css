@@ -6,73 +6,105 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}
-
 body {
+  margin: 0;
+  font-family: 'Noto Sans JP', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: #0a0a14;
-  color: #f3f4f6;
+  color: #e2e8f0;
+  overflow: hidden;
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #12121e;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 2px;
+  background: #2d2d4e;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #3d3d6e;
 }
 
-/* Prose overrides for dark theme */
-.prose-invert :where(p):not(:where([class~="not-prose"] *)) {
-  margin: 0.3em 0;
+.typing-indicator span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #8b5cf6;
+  animation: typing 1.4s infinite ease-in-out;
 }
 
-.prose-invert :where(ul, ol):not(:where([class~="not-prose"] *)) {
-  margin: 0.3em 0;
-  padding-left: 1.2em;
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
 }
 
-.prose-invert :where(li):not(:where([class~="not-prose"] *)) {
-  margin: 0.1em 0;
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
-.prose-invert :where(h1, h2, h3, h4):not(:where([class~="not-prose"] *)) {
-  margin: 0.5em 0 0.3em;
-  color: #e5e7eb;
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
 }
 
-.prose-invert :where(code):not(:where([class~="not-prose"] *)) {
-  background: #1f2937;
+.employee-card-enter {
+  animation: slideIn 0.5s ease-out forwards;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.prose-dark {
+  color: #cbd5e1;
+  line-height: 1.75;
+}
+
+.prose-dark h1, .prose-dark h2, .prose-dark h3 {
+  color: #e2e8f0;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose-dark p {
+  margin-bottom: 1em;
+}
+
+.prose-dark ul, .prose-dark ol {
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.prose-dark li {
+  margin-bottom: 0.25em;
+}
+
+.prose-dark strong {
+  color: #f1f5f9;
+}
+
+.prose-dark code {
+  background: #1e1e3a;
+  padding: 0.1em 0.4em;
   border-radius: 3px;
-  padding: 0.1em 0.3em;
-  font-size: 0.85em;
-  color: #a78bfa;
-}
-
-.prose-invert :where(pre):not(:where([class~="not-prose"] *)) {
-  background: #111827;
-  border: 1px solid #374151;
-  border-radius: 8px;
-  padding: 0.75rem;
-  overflow-x: auto;
-}
-
-.prose-invert :where(blockquote):not(:where([class~="not-prose"] *)) {
-  border-left: 3px solid #7c3aed;
-  padding-left: 0.75rem;
-  color: #9ca3af;
-  margin: 0.5em 0;
+  font-size: 0.9em;
 }

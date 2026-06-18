@@ -1,38 +1,47 @@
-import ReactMarkdown from 'react-markdown'
-import { Message } from '../types'
+import { Message } from '../types';
 
 interface Props {
-  message: Message
+  message: Message;
+}
+
+function formatContent(content: string): string {
+  return content
+    .replace(/\[READY_TO_PLAN\]/g, '')
+    .replace(/\[APPROVED\]/g, '')
+    .replace(/\[NEEDS_REVISION:\w+\]/g, '')
+    .trim();
 }
 
 export function ChatMessage({ message }: Props) {
-  const isUser = message.role === 'user'
+  const isUser = message.role === 'user';
+  const content = formatContent(message.content);
 
-  // Remove internal markers from display
-  const displayContent = message.content
-    .replace(/\[READY_TO_PLAN\]/g, '')
-    .trim()
-
-  if (!displayContent) return null
+  if (!content) return null;
 
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-up`}>
+    <div className={`flex gap-3 mb-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-violet-900/40">
+        <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm flex-shrink-0 mt-1">
           橘
         </div>
       )}
+      {isUser && (
+        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-sm flex-shrink-0 mt-1">
+          👔
+        </div>
+      )}
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
           isUser
-            ? 'bg-violet-600/20 border border-violet-500/30 text-white ml-auto'
-            : 'bg-navy-700 border border-gray-700/50 text-gray-100'
+            ? 'bg-slate-700 text-white rounded-tr-sm'
+            : 'bg-[#1a1a2e] text-slate-200 rounded-tl-sm border border-[#2d2d4e]'
         }`}
       >
-        <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
-          <ReactMarkdown>{displayContent}</ReactMarkdown>
+        <div className="whitespace-pre-wrap">{content}</div>
+        <div className={`text-xs mt-1 ${isUser ? 'text-slate-400' : 'text-slate-500'}`}>
+          {message.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
     </div>
-  )
+  );
 }

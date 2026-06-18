@@ -1,277 +1,211 @@
-import { useWorkflowStore } from '../stores/workflowStore'
-import { TaskPlan } from '../types'
+import { useCallback } from 'react';
+import { useWorkflowStore } from '../stores/workflowStore';
+import { useSSE } from './useSSE';
+import { TaskPlan } from '../types';
 
 export function useWorkflow() {
-  const store = useWorkflowStore()
+  const store = useWorkflowStore();
+  const { startSSE } = useSSE();
 
-  const sendToSecretary = async (userMessage: string) => {
-    store.addMessage({ role: 'user', content: userMessage })
-    store.setIsSecretaryTyping(true)
-    store.setPhase('clarifying')
+  const sendMessage = useCallback(async (content: string) => {
+    if (!store.apiKey) return;
 
-    const allMessages = [
-      ...store.messages,
-      { role: 'user' as const, content: userMessage },
-    ]
+    store.addMessage({ role: 'user', content });
+    store.setPhase('clarifying');
+    store.setSecretaryStreaming(true);
+    store.setStreamingContent('');
 
-    let fullResponse = ''
-    store.addMessage({ role: 'assistant', content: '' })
+    const messagesForAPI = [...store.messages, { role: 'user', content }].map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-    try {
-      const response = await fetch('/api/chat/secretary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: allMessages, apiKey: store.apiKey }),
-      })
+    let fullResponse = '';
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
+    await startSSE('/api/chat/secretary', {
+      messages: messagesForAPI,
+      apiKey: store.apiKey,
+    }, {
+      onChunk: (text) => {
+        fullResponse += text;
+        store.appendStreamingContent(text);
+      },
+      onDone: () => {
+        store.setSecretaryStreaming(false);
+        store.addMessage({ role: 'assistant', content: fullResponse });
+        store.setStreamingContent('');
 
-      if (!reader) throw new Error('No reader')
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'chunk') {
-                fullResponse += data.text
-                store.updateLastAssistantMessage(data.text)
-              } else if (data.type === 'done') {
-                break
-              }
-            } catch {
-              // skip malformed lines
-            }
-          }
+        if (fullResponse.includes('[READY_TO_PLAN]')) {
+          store.setPhase('planning');
+          generatePlan([...store.messages, { role: 'user', content }, { role: 'assistant', content: fullResponse }]);
+        } else {
+          store.setPhase('clarifying');
         }
-      }
-    } finally {
-      store.setIsSecretaryTyping(false)
-    }
+      },
+      onError: (err) => {
+        store.setSecretaryStreaming(false);
+        store.addMessage({ role: 'assistant', content: `エラーが発生しました: ${err}` });
+        store.setPhase('idle');
+      },
+    });
+  }, [store, startSSE]);
 
-    if (fullResponse.includes('[READY_TO_PLAN]')) {
-      await generatePlan()
-    }
-  }
-
-  const generatePlan = async () => {
-    store.setPhase('planning')
+  const generatePlan = useCallback(async (allMessages?: any[]) => {
+    const messages = allMessages || store.messages;
+    store.setPhase('planning');
 
     try {
       const response = await fetch('/api/workflow/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversation: store.messages,
+          conversation: messages.map((m: any) => ({ role: m.role, content: m.content })),
           apiKey: store.apiKey,
         }),
-      })
+      });
 
-      const plan: TaskPlan = await response.json()
-      store.setTaskPlan(plan)
-      store.setPhase('awaiting_approval')
-    } catch (error) {
-      console.error('Plan generation failed:', error)
-      store.setPhase('clarifying')
-    }
-  }
-
-  const approvePlan = async (feedback?: string) => {
-    if (!store.taskPlan) return
-
-    store.setPhase('executing')
-
-    try {
-      const response = await fetch('/api/workflow/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: store.taskPlan,
-          conversation: store.messages,
-          userFeedback: feedback,
-          apiKey: store.apiKey,
-        }),
-      })
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) throw new Error('No reader')
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'employee_start') {
-                store.setEmployeeStatus(data.employeeId, 'working')
-              } else if (data.type === 'employee_chunk') {
-                store.appendEmployeeOutput(data.employeeId, data.chunk)
-              } else if (data.type === 'employee_done') {
-                store.setEmployeeStatus(data.employeeId, 'done')
-              } else if (data.type === 'employee_error') {
-                store.setEmployeeStatus(data.employeeId, 'error')
-              } else if (data.type === 'all_done') {
-                await reviewOutputs()
-              }
-            } catch {
-              // skip malformed
-            }
-          }
-        }
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error);
       }
-    } catch (error) {
-      console.error('Execution failed:', error)
+
+      const plan: TaskPlan = await response.json();
+      store.setCurrentPlan(plan);
+      store.setPhase('awaiting_approval');
+    } catch (error: any) {
+      store.addMessage({ role: 'assistant', content: `プラン作成エラー: ${error.message}` });
+      store.setPhase('clarifying');
     }
-  }
+  }, [store]);
 
-  const reviewOutputs = async () => {
-    if (!store.taskPlan) return
+  const executePlan = useCallback(async (plan: TaskPlan, userFeedback?: string) => {
+    store.setPhase('executing');
+    store.clearEmployeeWorks();
 
-    store.setPhase('reviewing')
-    store.setReviewText('')
+    // Initialize all employees as waiting
+    plan.employees.forEach(e => {
+      store.setEmployeeWork(e.id, { status: 'waiting', output: '' });
+    });
 
-    let reviewText = ''
-
-    try {
-      const response = await fetch('/api/workflow/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: store.taskPlan,
-          outputs: store.employeeOutputs,
-          conversation: store.messages,
-          apiKey: store.apiKey,
-        }),
-      })
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) throw new Error('No reader')
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'chunk') {
-                reviewText += data.text
-                store.appendReviewText(data.text)
-              } else if (data.type === 'done') {
-                break
-              }
-            } catch {
-              // skip
-            }
-          }
+    await startSSE('/api/workflow/execute', {
+      plan,
+      conversation: store.messages.map(m => ({ role: m.role, content: m.content })),
+      userFeedback,
+      apiKey: store.apiKey,
+    }, {
+      onEvent: (event) => {
+        if (event.type === 'employee_start') {
+          store.setEmployeeWork(event.employeeId, { status: 'working' });
+        } else if (event.type === 'employee_chunk') {
+          const current = store.employeeWorks[event.employeeId];
+          store.setEmployeeWork(event.employeeId, {
+            output: (current?.output || '') + event.chunk,
+          });
+        } else if (event.type === 'employee_done') {
+          store.setEmployeeWork(event.employeeId, { status: 'done' });
+        } else if (event.type === 'all_done') {
+          reviewOutputs(plan);
+        } else if (event.type === 'error') {
+          store.addMessage({ role: 'assistant', content: `実行エラー: ${event.message}` });
+          store.setPhase('clarifying');
         }
-      }
-    } catch (error) {
-      console.error('Review failed:', error)
-    }
+      },
+      onDone: () => {
+        // all_done event handles the transition
+      },
+      onError: (err) => {
+        store.addMessage({ role: 'assistant', content: `実行エラー: ${err}` });
+        store.setPhase('clarifying');
+      },
+    });
+  }, [store, startSSE]);
 
-    if (reviewText.includes('[APPROVED]')) {
-      store.setPhase('presenting')
-    } else if (reviewText.includes('[NEEDS_REVISION')) {
-      // Re-execute with revision instructions
-      await reviseOutputs(reviewText)
-    } else {
-      store.setPhase('presenting')
-    }
-  }
+  const reviewOutputs = useCallback(async (plan: TaskPlan) => {
+    store.setPhase('reviewing');
+    store.setReviewText('');
 
-  const reviseOutputs = async (reviewInstructions: string) => {
-    if (!store.taskPlan) return
+    const outputs: Record<string, string> = {};
+    plan.employees.forEach(e => {
+      outputs[e.id] = store.employeeWorks[e.id]?.output || '';
+    });
 
-    store.setPhase('executing')
+    let fullReview = '';
 
-    // Reset statuses for revision
-    store.taskPlan.employees.forEach((e) => {
-      store.setEmployeeStatus(e.id, 'waiting')
-    })
+    await startSSE('/api/workflow/review', {
+      plan,
+      outputs,
+      conversation: store.messages.map(m => ({ role: m.role, content: m.content })),
+      apiKey: store.apiKey,
+    }, {
+      onChunk: (text) => {
+        fullReview += text;
+        store.appendReviewText(text);
+      },
+      onDone: () => {
+        const needsRevision = fullReview.match(/\[NEEDS_REVISION:(\w+)\]/g);
+        const approved = fullReview.includes('[APPROVED]');
 
-    // Build revised plan with feedback
-    try {
-      const response = await fetch('/api/workflow/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan: store.taskPlan,
-          conversation: store.messages,
-          userFeedback: `秘書からの修正指示:\n${reviewInstructions}\n\n前回のアウトプット:\n${JSON.stringify(store.employeeOutputs)}`,
-          apiKey: store.apiKey,
-        }),
-      })
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) throw new Error('No reader')
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'employee_start') {
-                store.setEmployeeStatus(data.employeeId, 'working')
-              } else if (data.type === 'employee_chunk') {
-                store.appendEmployeeOutput(data.employeeId, data.chunk)
-              } else if (data.type === 'employee_done') {
-                store.setEmployeeStatus(data.employeeId, 'done')
-              } else if (data.type === 'all_done') {
-                store.setPhase('presenting')
-              }
-            } catch {
-              // skip
-            }
-          }
+        if (approved || store.revisionRound >= 1) {
+          presentFinalOutput(plan);
+        } else if (needsRevision && store.revisionRound < 2) {
+          store.incrementRevisionRound();
+          executePlan(plan, `レビュー結果: ${fullReview}`);
+        } else {
+          presentFinalOutput(plan);
         }
-      }
-    } catch (error) {
-      console.error('Revision failed:', error)
-      store.setPhase('presenting')
-    }
-  }
+      },
+      onError: (err) => {
+        store.addMessage({ role: 'assistant', content: `レビューエラー: ${err}` });
+        presentFinalOutput(plan);
+      },
+    });
+  }, [store, startSSE]);
 
-  const confirmComplete = () => {
-    store.setPhase('complete')
-  }
+  const presentFinalOutput = useCallback(async (plan: TaskPlan) => {
+    store.setPhase('presenting');
+    store.setFinalOutput('');
 
-  const startNew = () => {
-    store.reset()
-  }
+    const outputs: Record<string, string> = {};
+    plan.employees.forEach(e => {
+      outputs[e.id] = store.employeeWorks[e.id]?.output || '';
+    });
+
+    await startSSE('/api/workflow/present', {
+      plan,
+      outputs,
+      conversation: store.messages.map(m => ({ role: m.role, content: m.content })),
+      apiKey: store.apiKey,
+    }, {
+      onChunk: (text) => {
+        store.appendFinalOutput(text);
+      },
+      onDone: () => {
+        store.setPhase('complete');
+      },
+      onError: (err) => {
+        store.setFinalOutput(`エラー: ${err}`);
+        store.setPhase('complete');
+      },
+    });
+  }, [store, startSSE]);
+
+  const approveAndExecute = useCallback(async (feedback?: string) => {
+    if (!store.currentPlan) return;
+    store.resetRevisionRound();
+    await executePlan(store.currentPlan, feedback);
+  }, [store, executePlan]);
+
+  const startNewTask = useCallback(() => {
+    store.reset();
+  }, [store]);
 
   return {
-    sendToSecretary,
-    approvePlan,
-    confirmComplete,
-    startNew,
-  }
+    sendMessage,
+    generatePlan,
+    executePlan,
+    reviewOutputs,
+    presentFinalOutput,
+    approveAndExecute,
+    startNewTask,
+  };
 }

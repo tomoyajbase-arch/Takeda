@@ -1,89 +1,125 @@
-import { create } from 'zustand'
-import { Message, TaskPlan, EmployeeStatus, Phase } from '../types'
+import { create } from 'zustand';
+import { Phase, Message, TaskPlan, EmployeeWork } from '../types';
 
-interface WorkflowStore {
-  phase: Phase
-  apiKey: string
-  messages: Message[]
-  taskPlan: TaskPlan | null
-  employeeStatuses: Record<string, EmployeeStatus>
-  employeeOutputs: Record<string, string>
-  reviewText: string
-  isSecretaryTyping: boolean
+interface WorkflowState {
+  // Auth
+  apiKey: string;
+  setApiKey: (key: string) => void;
 
-  setPhase: (phase: Phase) => void
-  setApiKey: (key: string) => void
-  addMessage: (message: Message) => void
-  updateLastAssistantMessage: (text: string) => void
-  setTaskPlan: (plan: TaskPlan) => void
-  setEmployeeStatus: (id: string, status: EmployeeStatus) => void
-  appendEmployeeOutput: (id: string, chunk: string) => void
-  setReviewText: (text: string) => void
-  appendReviewText: (chunk: string) => void
-  setIsSecretaryTyping: (typing: boolean) => void
-  reset: () => void
+  // Phase
+  phase: Phase;
+  setPhase: (phase: Phase) => void;
+
+  // Messages
+  messages: Message[];
+  addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
+  updateLastMessage: (content: string) => void;
+  clearMessages: () => void;
+
+  // Secretary streaming
+  secretaryStreaming: boolean;
+  setSecretaryStreaming: (v: boolean) => void;
+  streamingContent: string;
+  setStreamingContent: (v: string) => void;
+  appendStreamingContent: (v: string) => void;
+
+  // Plan
+  currentPlan: TaskPlan | null;
+  setCurrentPlan: (plan: TaskPlan | null) => void;
+
+  // Employee work
+  employeeWorks: Record<string, EmployeeWork>;
+  setEmployeeWork: (id: string, work: Partial<EmployeeWork>) => void;
+  clearEmployeeWorks: () => void;
+
+  // Review
+  reviewText: string;
+  setReviewText: (text: string) => void;
+  appendReviewText: (text: string) => void;
+
+  // Final output
+  finalOutput: string;
+  setFinalOutput: (text: string) => void;
+  appendFinalOutput: (text: string) => void;
+
+  // Revision rounds
+  revisionRound: number;
+  incrementRevisionRound: () => void;
+  resetRevisionRound: () => void;
+
+  // Reset everything
+  reset: () => void;
 }
 
-export const useWorkflowStore = create<WorkflowStore>((set) => ({
-  phase: 'setup',
-  apiKey: localStorage.getItem('ai-company-api-key') || '',
-  messages: [],
-  taskPlan: null,
-  employeeStatuses: {},
-  employeeOutputs: {},
-  reviewText: '',
-  isSecretaryTyping: false,
-
-  setPhase: (phase) => set({ phase }),
+export const useWorkflowStore = create<WorkflowState>((set) => ({
+  apiKey: localStorage.getItem('apiKey') || '',
   setApiKey: (key) => {
-    localStorage.setItem('ai-company-api-key', key)
-    set({ apiKey: key })
+    localStorage.setItem('apiKey', key);
+    set({ apiKey: key });
   },
-  addMessage: (message) =>
-    set((state) => ({ messages: [...state.messages, message] })),
-  updateLastAssistantMessage: (text) =>
-    set((state) => {
-      const messages = [...state.messages]
-      const last = messages[messages.length - 1]
-      if (last && last.role === 'assistant') {
-        messages[messages.length - 1] = { ...last, content: last.content + text }
-      } else {
-        messages.push({ role: 'assistant', content: text })
-      }
-      return { messages }
-    }),
-  setTaskPlan: (plan) => {
-    const statuses: Record<string, EmployeeStatus> = {}
-    const outputs: Record<string, string> = {}
-    plan.employees.forEach((e) => {
-      statuses[e.id] = 'waiting'
-      outputs[e.id] = ''
-    })
-    set({ taskPlan: plan, employeeStatuses: statuses, employeeOutputs: outputs })
-  },
-  setEmployeeStatus: (id, status) =>
-    set((state) => ({
-      employeeStatuses: { ...state.employeeStatuses, [id]: status },
-    })),
-  appendEmployeeOutput: (id, chunk) =>
-    set((state) => ({
-      employeeOutputs: {
-        ...state.employeeOutputs,
-        [id]: (state.employeeOutputs[id] || '') + chunk,
-      },
-    })),
+
+  phase: localStorage.getItem('apiKey') ? 'idle' : 'setup',
+  setPhase: (phase) => set({ phase }),
+
+  messages: [],
+  addMessage: (message) => set((state) => ({
+    messages: [...state.messages, {
+      ...message,
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date(),
+    }]
+  })),
+  updateLastMessage: (content) => set((state) => {
+    const messages = [...state.messages];
+    if (messages.length > 0) {
+      messages[messages.length - 1] = {
+        ...messages[messages.length - 1],
+        content,
+      };
+    }
+    return { messages };
+  }),
+  clearMessages: () => set({ messages: [] }),
+
+  secretaryStreaming: false,
+  setSecretaryStreaming: (v) => set({ secretaryStreaming: v }),
+  streamingContent: '',
+  setStreamingContent: (v) => set({ streamingContent: v }),
+  appendStreamingContent: (v) => set((state) => ({ streamingContent: state.streamingContent + v })),
+
+  currentPlan: null,
+  setCurrentPlan: (plan) => set({ currentPlan: plan }),
+
+  employeeWorks: {},
+  setEmployeeWork: (id, work) => set((state) => ({
+    employeeWorks: {
+      ...state.employeeWorks,
+      [id]: { ...state.employeeWorks[id], ...work, employeeId: id },
+    }
+  })),
+  clearEmployeeWorks: () => set({ employeeWorks: {} }),
+
+  reviewText: '',
   setReviewText: (text) => set({ reviewText: text }),
-  appendReviewText: (chunk) =>
-    set((state) => ({ reviewText: state.reviewText + chunk })),
-  setIsSecretaryTyping: (typing) => set({ isSecretaryTyping: typing }),
-  reset: () =>
-    set({
-      phase: 'idle',
-      messages: [],
-      taskPlan: null,
-      employeeStatuses: {},
-      employeeOutputs: {},
-      reviewText: '',
-      isSecretaryTyping: false,
-    }),
-}))
+  appendReviewText: (text) => set((state) => ({ reviewText: state.reviewText + text })),
+
+  finalOutput: '',
+  setFinalOutput: (text) => set({ finalOutput: text }),
+  appendFinalOutput: (text) => set((state) => ({ finalOutput: state.finalOutput + text })),
+
+  revisionRound: 0,
+  incrementRevisionRound: () => set((state) => ({ revisionRound: state.revisionRound + 1 })),
+  resetRevisionRound: () => set({ revisionRound: 0 }),
+
+  reset: () => set({
+    phase: 'idle',
+    messages: [],
+    secretaryStreaming: false,
+    streamingContent: '',
+    currentPlan: null,
+    employeeWorks: {},
+    reviewText: '',
+    finalOutput: '',
+    revisionRound: 0,
+  }),
+}));

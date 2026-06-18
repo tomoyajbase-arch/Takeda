@@ -1,98 +1,104 @@
-import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { Employee, EmployeeStatus } from '../types'
-import { ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { useState } from 'react';
+import { TaskEmployee, EmployeeWork } from '../types';
 
 interface Props {
-  employee: Employee
-  status: EmployeeStatus
-  output: string
-  index: number
+  employee: TaskEmployee;
+  work?: EmployeeWork;
+  index: number;
 }
 
-export function EmployeeCard({ employee, status, output, index }: Props) {
-  const [expanded, setExpanded] = useState(false)
+export function EmployeeCard({ employee, work, index }: Props) {
+  const [expanded, setExpanded] = useState(false);
 
-  const statusIcon = {
-    waiting: <Clock size={14} className="text-gray-500" />,
-    working: <Loader2 size={14} className="text-blue-400 animate-spin" />,
-    done: <CheckCircle2 size={14} className="text-green-400" />,
-    error: <AlertCircle size={14} className="text-red-400" />,
-  }[status]
+  const status = work?.status || 'waiting';
+  const output = work?.output || '';
 
-  const statusText = {
-    waiting: '待機中',
-    working: '作業中...',
-    done: '完了',
-    error: 'エラー',
-  }[status]
+  const statusConfig = {
+    waiting: { label: '待機中', labelEn: 'Waiting', color: 'text-slate-500', bg: 'bg-slate-500/10' },
+    working: { label: '作業中', labelEn: 'Working', color: 'text-amber-400', bg: 'bg-amber-400/10' },
+    revising: { label: '修正中', labelEn: 'Revising', color: 'text-orange-400', bg: 'bg-orange-400/10' },
+    done: { label: '完了', labelEn: 'Done', color: 'text-green-400', bg: 'bg-green-400/10' },
+  };
 
-  const statusBg = {
-    waiting: 'bg-gray-800',
-    working: 'bg-blue-950/50',
-    done: 'bg-green-950/30',
-    error: 'bg-red-950/30',
-  }[status]
+  const sc = statusConfig[status];
 
   return (
     <div
-      className={`rounded-xl border transition-all duration-500 overflow-hidden animate-slide-in-right ${statusBg}`}
+      className="bg-[#12121e] border rounded-xl overflow-hidden employee-card-enter"
       style={{
-        borderColor: status === 'working' ? employee.color + '60' : status === 'done' ? employee.color + '40' : '#374151',
-        animationDelay: `${index * 100}ms`,
-        boxShadow: status === 'working' ? `0 0 20px ${employee.color}20` : 'none',
+        borderColor: employee.color + '44',
+        animationDelay: `${index * 0.1}s`,
       }}
     >
-      {/* Card Header */}
-      <div className="flex items-center gap-3 p-4">
+      {/* Card header */}
+      <div
+        className="px-4 py-3 flex items-center gap-3"
+        style={{ borderBottom: `1px solid ${employee.color}22` }}
+      >
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 shadow-lg"
-          style={{ backgroundColor: employee.color + '20', border: `2px solid ${employee.color}40` }}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0 relative"
+          style={{ backgroundColor: employee.color + '22' }}
         >
           {employee.emoji}
+          {status === 'working' && (
+            <div
+              className="absolute inset-0 rounded-full animate-ping opacity-30"
+              style={{ backgroundColor: employee.color }}
+            ></div>
+          )}
         </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-white font-medium text-sm">{employee.name}</p>
-            <span className="text-gray-500 text-xs">•</span>
-            <span className="text-xs" style={{ color: employee.color }}>{employee.role}</span>
+            <span className="text-white font-medium text-sm">{employee.name}</span>
+            {status === 'done' && (
+              <span className="text-green-400 text-xs">✓</span>
+            )}
           </div>
-          <p className="text-gray-400 text-xs mt-0.5 truncate">{employee.taskTitle}</p>
+          <p className="text-xs truncate" style={{ color: employee.color + 'cc' }}>{employee.role}</p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex items-center gap-1.5 bg-navy-900 rounded-full px-2.5 py-1">
-            {statusIcon}
-            <span className="text-xs text-gray-400">{statusText}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* Task description */}
-      <div className="px-4 pb-3">
-        <p className="text-gray-500 text-xs leading-relaxed">{employee.task}</p>
-      </div>
-
-      {/* Output (when done) */}
-      {(status === 'done' || status === 'working') && output && (
-        <div className="border-t border-gray-800">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center justify-between px-4 py-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-          >
-            <span>アウトプット {status === 'working' ? '(作業中)' : ''}</span>
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          {expanded && (
-            <div className="px-4 pb-4">
-              <div
-                className="text-xs text-gray-300 leading-relaxed bg-navy-950 rounded-lg p-3 max-h-64 overflow-y-auto prose prose-invert prose-xs max-w-none"
-              >
-                <ReactMarkdown>{output}</ReactMarkdown>
-              </div>
-            </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc.color} ${sc.bg}`}>
+            {sc.label}
+          </span>
+          {output && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
+            >
+              {expanded ? '閉じる ↑' : '詳細 ↓'}
+            </button>
           )}
+        </div>
+      </div>
+
+      {/* Task info */}
+      <div className="px-4 py-2 bg-[#0a0a14]/50">
+        <p className="text-slate-500 text-xs mb-0.5">タスク / Task</p>
+        <p className="text-slate-300 text-xs leading-relaxed line-clamp-2">{employee.task}</p>
+      </div>
+
+      {/* Output */}
+      {status === 'working' && !output && (
+        <div className="px-4 py-3 flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin flex-shrink-0" style={{ borderColor: employee.color }}></div>
+          <span className="text-xs text-slate-500">処理中...</span>
+        </div>
+      )}
+
+      {output && (
+        <div className={`overflow-hidden transition-all duration-300 ${expanded ? 'max-h-96' : 'max-h-16'}`}>
+          <div className="px-4 py-3 border-t border-[#1a1a2e]">
+            <div className={`text-xs text-slate-400 leading-relaxed ${expanded ? '' : 'line-clamp-3'} whitespace-pre-wrap`}>
+              {output}
+              {status === 'working' && (
+                <span className="inline-block w-0.5 h-3 ml-0.5 animate-pulse align-middle" style={{ backgroundColor: employee.color }}></span>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
-  )
+  );
 }
