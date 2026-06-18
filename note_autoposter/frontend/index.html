@@ -108,7 +108,8 @@
         <div>トンマナ <span id="q-tone" class="text-white font-medium">--</span>/25</div>
         <div>セールス力 <span id="q-sales" class="text-white font-medium">--</span>/25</div>
       </div>
-      <div id="quality-issues" class="text-xs text-yellow-400 hidden"></div>
+      <div id="quality-char-counts" class="text-xs text-gray-500 mt-1 hidden"></div>
+      <div id="quality-issues" class="text-xs text-yellow-400 mt-1 hidden"></div>
     </div>
 
     <!-- Review actions for "review" status -->
@@ -466,6 +467,16 @@ function showQualityScore(qs) {
   document.getElementById('q-value').textContent = qs.purchase_value ?? '--';
   document.getElementById('q-tone').textContent = qs.tone_match ?? '--';
   document.getElementById('q-sales').textContent = qs.sales_letter ?? '--';
+
+  const charEl = document.getElementById('quality-char-counts');
+  if (qs.free_char_count !== undefined) {
+    charEl.classList.remove('hidden');
+    const freeOk = qs.free_char_count >= 2500;
+    const paidOk = qs.paid_char_count >= 5000;
+    charEl.innerHTML =
+      `無料部分: <span class="${freeOk ? 'text-note' : 'text-yellow-400'}">${qs.free_char_count?.toLocaleString()}字</span> / 目標2500字　` +
+      `有料部分: <span class="${paidOk ? 'text-note' : 'text-yellow-400'}">${qs.paid_char_count?.toLocaleString()}字</span> / 目標5000字`;
+  }
 
   const issuesEl = document.getElementById('quality-issues');
   if (qs.issues && qs.issues.length) {
