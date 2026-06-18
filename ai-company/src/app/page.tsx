@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { useStore } from "@/lib/store";
 import { Employee, Task, Plan } from "@/lib/types";
 import { MessageBubble } from "@/components/MessageBubble";
@@ -21,7 +22,6 @@ async function streamText(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let full = "";
@@ -33,17 +33,13 @@ async function streamText(
     const lines = chunk.split("\n");
     for (const line of lines) {
       if (line.startsWith("data: ")) {
-        const data = line.slice(6).trim();
+        const data = line.slice(6);
         if (data === "[DONE]") continue;
         try {
-          const parsed = JSON.parse(data);
-          if (parsed.text) {
-            full += parsed.text;
-            onChunk(parsed.text);
-          }
-        } catch {
-          // ignore parse errors
-        }
+          const { text } = JSON.parse(data);
+          full += text;
+          onChunk(text);
+        } catch {}
       }
     }
   }
@@ -56,28 +52,26 @@ export default function Home() {
   const [streamingText, setStreamingText] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const initialized = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [store.messages, streamingText]);
 
+  // Initial greeting
   useEffect(() => {
-    if (!initialized.current && store.messages.length === 0) {
-      initialized.current = true;
+    if (store.messages.length === 0) {
       store.addMessage(
         "secretary",
-        "おはようございます、社長。本日はどのようなことをお手伝いいたしましょうか？\n\nどんな抽象的なゴールでも構いません。まずはお気軽にお申し付けください。"
+        "おはようございます、社長。本日はどのようなことをお手伝いいたしましょうか？\n\nどんな抽象的なゴールでも構いません。お気軽にお申し付けください。"
       );
     }
-  }, [store]);
+  }, []);
 
   const sendToSecretary = useCallback(
     async (userMessage: string) => {
       store.addMessage("user", userMessage);
       store.setLoading(true);
-      setStreamingText("");
 
       const messages = [
         ...store.messages,
@@ -85,24 +79,29 @@ export default function Home() {
       ];
 
       let accumulated = "";
-      try {
-        const full = await streamText(
-          "/api/chat",
-          { messages, mode: store.phase },
-          (chunk) => {
-            accumulated += chunk;
-            setStreamingText(accumulated);
-          }
-        );
-        setStreamingText("");
-        store.addMessage("secretary", full);
-      } catch (e) {
-        setStreamingText("");
-        store.addMessage("secretary", "申し訳ありません、エラーが発生しました。もう一度お試しください。");
-      }
+      setStreamingText("");
 
+      const full = await streamText(
+        "/api/chat",
+        {
+          messages,
+          mode: store.phase === "idle" ? "questioning" : store.phase,
+        },
+        (chunk) => {
+          accumulated += chunk;
+          setStreamingText(accumulated);
+        }
+      );
+
+      setStreamingText("");
+      store.addMessage("secretary", full);
       store.setLoading(false);
-      if (store.phase === "idle") store.setPhase("questioning");
+
+      // Transition: after a few exchanges, offer to proceed with planning
+      const questionCount = messages.filter((m) => m.role === "user").length;
+      if (questionCount >= 2 && store.phase !== "planning") {
+        store.setPhase("questioning");
+      }
     },
     [store]
   );
@@ -110,38 +109,33 @@ export default function Home() {
   const startPlanning = useCallback(async () => {
     store.setLoading(true);
     store.setPhase("planning");
-    setStreamingText("");
 
     const userMessages = store.messages.filter((m) => m.role === "user");
-    const goal = userMessages.map((m) => m.content).join(" / ");
+    const goal = userMessages[0]?.content || "";
     store.setGoal(goal);
 
-    store.addMessage("secretary", "承知しました。最適な社員チームを編成し、タスクを割り当てています...");
+    store.addMessage("secretary", "承知しました。最適な社員チームを編成し、タスクを割り当てます...");
 
-    try {
-      const res = await fetch("/api/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal, conversation: store.messages }),
-      });
+    const res = await fetch("/api/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        goal,
+        conversation: store.messages,
+      }),
+    });
 
-      const { plan, error } = await res.json();
+    const { plan, error } = await res.json();
 
-      if (error || !plan) {
-        store.addMessage("secretary", "計画の作成に失敗しました。もう一度お試しください。");
-        store.setPhase("questioning");
-        store.setLoading(false);
-        return;
-      }
-
-      store.setPlan(plan);
-      store.setPhase("confirming");
-      setShowConfirmation(true);
-    } catch (e) {
-      store.addMessage("secretary", "エラーが発生しました。もう一度お試しください。");
-      store.setPhase("questioning");
+    if (error || !plan) {
+      store.addMessage("secretary", "計画の作成に失敗しました。もう一度お試しください。");
+      store.setLoading(false);
+      return;
     }
 
+    store.setPlan(plan);
+    store.setPhase("confirming");
+    setShowConfirmation(true);
     store.setLoading(false);
   }, [store]);
 
@@ -150,6 +144,7 @@ export default function Home() {
       store.setPhase("executing");
       setShowConfirmation(false);
 
+      // Build employees and tasks
       const employees: Employee[] = plan.employees.map((emp) => ({
         ...emp,
         status: "preparing" as const,
@@ -162,6 +157,7 @@ export default function Home() {
       }));
 
       store.setEmployees(employees);
+
       const allTasks: Task[] = employees.flatMap((e) => e.tasks);
       store.setTasks(allTasks);
 
@@ -170,7 +166,8 @@ export default function Home() {
         `計画が確定しました。${employees.length}名の社員がタスクを開始します。`
       );
 
-      const taskOutputs: Record<string, string> = {};
+      // Execute tasks per employee (sequentially per employee, employees in parallel)
+      const taskOutputs: { taskId: string; output: string }[] = [];
 
       await Promise.all(
         employees.map(async (employee) => {
@@ -180,66 +177,60 @@ export default function Home() {
             store.updateTask(task.id, { status: "in-progress" });
 
             let output = "";
-            try {
-              await streamText(
-                "/api/execute",
-                {
-                  task,
-                  employee,
-                  goal: store.goal,
-                  allTasks: allTasks.map((t) => ({ title: t.title })),
-                },
-                (chunk) => {
-                  output += chunk;
-                  store.updateTask(task.id, { output });
-                }
-              );
-            } catch {
-              output = "タスクの実行中にエラーが発生しました。";
-            }
+            await streamText(
+              "/api/execute",
+              {
+                task,
+                employee,
+                goal: store.goal,
+                allTasks: allTasks.map((t) => ({ title: t.title })),
+              },
+              (chunk) => {
+                output += chunk;
+                store.updateTask(task.id, { output });
+              }
+            );
 
             store.updateTask(task.id, { status: "done", output });
-            taskOutputs[task.id] = output;
+            taskOutputs.push({ taskId: task.id, output });
           }
 
           store.updateEmployee(employee.id, { status: "done" });
         })
       );
 
+      // Review phase
       store.setPhase("reviewing");
-      store.addMessage("secretary", "全社員のタスクが完了しました。報告書を取りまとめています...");
-
-      const completedTasks = allTasks.map((t) => ({
-        ...t,
-        output: taskOutputs[t.id] || "",
-      }));
+      store.addMessage("secretary", "全社員のタスクが完了しました。レポートを取りまとめています...");
 
       let finalOutput = "";
       setStreamingText("");
 
-      try {
-        await streamText(
-          "/api/review",
-          {
-            goal: store.goal,
-            tasks: completedTasks,
-            outputs: completedTasks.map((t) => t.output),
-          },
-          (chunk) => {
-            finalOutput += chunk;
-            setStreamingText(finalOutput);
-          }
-        );
-      } catch {
-        finalOutput = completedTasks
-          .map((t) => `## ${t.title}\n${t.output}`)
-          .join("\n\n");
-      }
+      const completedTasks = allTasks.map((t) => {
+        const found = taskOutputs.find((o) => o.taskId === t.id);
+        return { ...t, output: found?.output || "" };
+      });
+
+      await streamText(
+        "/api/review",
+        {
+          goal: store.goal,
+          tasks: completedTasks,
+          outputs: completedTasks.map((t) => t.output),
+        },
+        (chunk) => {
+          finalOutput += chunk;
+          setStreamingText(finalOutput);
+        }
+      );
 
       setStreamingText("");
       store.setFinalOutput(finalOutput);
       store.setPhase("complete");
-      store.addMessage("secretary", "最終報告書が完成しました。ご確認ください。何かご不明な点があればお気軽にどうぞ。");
+      store.addMessage(
+        "secretary",
+        "最終報告書が完成しました。ご確認ください。"
+      );
     },
     [store]
   );
@@ -248,35 +239,36 @@ export default function Home() {
     async (feedback: string) => {
       setShowConfirmation(false);
       store.setPhase("questioning");
-      store.addMessage("user", `計画の修正依頼: ${feedback}`);
+      store.addMessage("user", `【修正依頼】${feedback}`);
       store.setLoading(true);
-      setStreamingText("");
 
       let accumulated = "";
-      try {
-        const full = await streamText(
-          "/api/chat",
-          {
-            messages: [
-              ...store.messages,
-              { role: "user", content: `計画の修正依頼: ${feedback}` },
-            ],
-            mode: "revise",
-          },
-          (chunk) => {
-            accumulated += chunk;
-            setStreamingText(accumulated);
-          }
-        );
-        setStreamingText("");
-        store.addMessage("secretary", full);
-      } catch {
-        setStreamingText("");
-        store.addMessage("secretary", "了解しました。計画を見直します。");
-      }
+      setStreamingText("");
 
+      const full = await streamText(
+        "/api/chat",
+        {
+          messages: [
+            ...store.messages,
+            {
+              role: "user",
+              content: `計画を見直してほしいです: ${feedback}`,
+            },
+          ],
+          mode: "revise",
+        },
+        (chunk) => {
+          accumulated += chunk;
+          setStreamingText(accumulated);
+        }
+      );
+
+      setStreamingText("");
+      store.addMessage("secretary", full);
       store.setLoading(false);
-      setTimeout(() => startPlanning(), 800);
+
+      // Re-plan after a moment
+      setTimeout(() => startPlanning(), 500);
     },
     [store, startPlanning]
   );
@@ -285,7 +277,6 @@ export default function Home() {
     const text = input.trim();
     if (!text || store.isLoading) return;
     setInput("");
-    if (textareaRef.current) textareaRef.current.style.height = "48px";
     await sendToSecretary(text);
   }, [input, store.isLoading, sendToSecretary]);
 
@@ -296,34 +287,25 @@ export default function Home() {
     }
   };
 
-  const canProceed =
+  const canProceedToPlanning =
     store.phase !== "complete" &&
     store.phase !== "executing" &&
     store.phase !== "reviewing" &&
     store.phase !== "confirming" &&
-    store.phase !== "planning" &&
     store.messages.filter((m) => m.role === "user").length >= 1 &&
     !store.isLoading;
-
-  const phaseLabel: Record<string, string> = {
-    planning: "📋 計画中",
-    confirming: "⏳ 確認待ち",
-    executing: "⚡ 実行中",
-    reviewing: "🔍 レビュー中",
-    complete: "✅ 完了",
-  };
 
   return (
     <div className="flex h-screen bg-[#0f1117] overflow-hidden">
       {/* Left: Secretary Chat */}
-      <div className="flex flex-col w-[460px] border-r border-white/10 flex-shrink-0">
+      <div className="flex flex-col w-[480px] border-r border-white/10 flex-shrink-0">
         {/* Header */}
         <div className="p-4 border-b border-white/10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-lg secretary-glow flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center secretary-glow">
             👩‍💼
           </div>
           <div>
-            <h1 className="font-semibold text-slate-200 text-sm">山田 綾</h1>
+            <h1 className="font-semibold text-slate-200">山田 綾</h1>
             <p className="text-xs text-sky-400">専属秘書</p>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
@@ -333,19 +315,18 @@ export default function Home() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
           {store.messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} />
           ))}
-
           {store.isLoading && (
             <div className="flex justify-start">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-sm mr-2 flex-shrink-0 mt-1">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-sm mr-2">
                 👩‍💼
               </div>
-              <div className="glass rounded-2xl rounded-tl-sm max-w-[80%]">
+              <div className="glass rounded-2xl rounded-tl-sm">
                 {streamingText ? (
-                  <p className="px-4 py-3 text-sm text-slate-200 whitespace-pre-wrap">
+                  <p className="px-4 py-3 text-sm text-slate-200 whitespace-pre-wrap max-w-[300px]">
                     {streamingText}
                   </p>
                 ) : (
@@ -357,12 +338,12 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Proceed to planning button */}
-        {canProceed && (
+        {/* Actions */}
+        {canProceedToPlanning && (
           <div className="px-4 pb-2">
             <button
               onClick={startPlanning}
-              className="w-full bg-sky-600/20 hover:bg-sky-600/30 border border-sky-600/40 text-sky-300 py-2.5 rounded-xl text-sm transition-colors"
+              className="w-full bg-sky-600/20 hover:bg-sky-600/30 border border-sky-600/50 text-sky-300 py-2 rounded-xl text-sm transition-colors"
             >
               ✨ 社員を編成してタスクを開始する
             </button>
@@ -373,20 +354,24 @@ export default function Home() {
         <div className="p-4 border-t border-white/10">
           <div className="flex gap-2 items-end">
             <textarea
-              ref={textareaRef}
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="秘書に伝える... (Shift+Enterで改行)"
+              placeholder={
+                store.phase === "complete"
+                  ? "新しいタスクを入力..."
+                  : "秘書に伝える..."
+              }
               disabled={store.isLoading}
               rows={1}
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 resize-none disabled:opacity-50 scrollbar-thin"
               style={{ minHeight: "48px", maxHeight: "120px" }}
               onInput={(e) => {
                 const el = e.currentTarget;
                 el.style.height = "auto";
                 el.style.height = Math.min(el.scrollHeight, 120) + "px";
               }}
-              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 resize-none disabled:opacity-50 scrollbar-thin"
             />
             <button
               onClick={handleSubmit}
@@ -401,24 +386,32 @@ export default function Home() {
 
       {/* Right: Company Floor */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
         <div className="p-4 border-b border-white/10 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-slate-400" />
-          <h2 className="font-medium text-slate-300 text-sm">会社フロア</h2>
+          <h2 className="font-medium text-slate-300">会社フロア</h2>
           {store.employees.length > 0 && (
-            <span className="ml-1 text-xs text-slate-500">
-              {store.employees.length}名在籍
+            <span className="ml-2 text-xs text-slate-500">
+              {store.employees.length}名が在籍中
             </span>
           )}
-          {phaseLabel[store.phase] && (
-            <span className="ml-auto text-xs px-2.5 py-1 rounded-full glass text-sky-400">
-              {phaseLabel[store.phase]}
-            </span>
-          )}
+          <div className="ml-auto">
+            {store.phase !== "idle" && store.phase !== "questioning" && (
+              <span className="text-xs px-2 py-1 rounded-full glass text-sky-400">
+                {store.phase === "planning" && "📋 計画中"}
+                {store.phase === "confirming" && "⏳ 確認待ち"}
+                {store.phase === "executing" && "⚡ 実行中"}
+                {store.phase === "reviewing" && "🔍 レビュー中"}
+                {store.phase === "complete" && "✅ 完了"}
+              </span>
+            )}
+          </div>
         </div>
 
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
-          {store.employees.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
+          {store.employees.length === 0 && store.phase !== "complete" ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="text-6xl mb-4">🏢</div>
               <p className="text-slate-500 text-sm">
                 秘書にゴールを伝えると、最適な社員チームが編成されます
@@ -427,23 +420,25 @@ export default function Home() {
           ) : (
             <div className="space-y-4">
               {store.phase === "complete" && store.finalOutput && (
-                <FinalReport output={store.finalOutput} onReset={store.reset} />
+                <FinalReport
+                  output={store.finalOutput}
+                  onReset={store.reset}
+                />
               )}
-
-              {store.phase === "reviewing" && streamingText && (
-                <div className="glass rounded-xl p-4 animate-fade-in mb-4">
-                  <p className="text-xs text-sky-400 mb-2 font-medium">📝 報告書作成中...</p>
-                  <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
-                    {streamingText}
-                  </p>
-                </div>
-              )}
-
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {store.employees.map((emp) => (
                   <EmployeeCard key={emp.id} employee={emp} />
                 ))}
               </div>
+            </div>
+          )}
+
+          {store.phase === "reviewing" && streamingText && (
+            <div className="mt-4 glass rounded-xl p-4 animate-fade-in">
+              <p className="text-xs text-sky-400 mb-2">📝 報告書作成中...</p>
+              <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                {streamingText}
+              </p>
             </div>
           )}
         </div>
