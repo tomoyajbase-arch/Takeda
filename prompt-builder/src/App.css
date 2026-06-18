@@ -25,37 +25,50 @@ body {
   border-radius: 16px;
   padding: 40px;
   width: 100%;
-  max-width: 640px;
+  max-width: 660px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
 }
 
 .result-card {
-  max-width: 760px;
+  max-width: 800px;
 }
 
 .header {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   text-align: center;
 }
 
 .app-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #a78bfa;
   letter-spacing: 0.02em;
 }
 
 .app-subtitle {
-  font-size: 13px;
-  color: #666680;
-  margin-top: 6px;
+  font-size: 12px;
+  color: #555570;
+  margin-top: 5px;
+}
+
+.section-label {
+  display: inline-block;
+  background: #2a1f4a;
+  color: #a78bfa;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 100px;
+  margin-bottom: 12px;
 }
 
 .progress-bar {
   background: #2a2a3a;
   border-radius: 100px;
-  height: 6px;
-  margin-bottom: 12px;
+  height: 5px;
+  margin-bottom: 10px;
   overflow: hidden;
 }
 
@@ -67,19 +80,23 @@ body {
 }
 
 .step-label {
-  font-size: 12px;
-  color: #666680;
+  font-size: 11px;
+  color: #555570;
   margin-bottom: 20px;
   text-align: right;
 }
 
 .question {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.7;
+  line-height: 1.75;
   color: #e8e8f0;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   white-space: pre-line;
+}
+
+.required {
+  color: #f87171;
 }
 
 .answer-input {
@@ -88,7 +105,7 @@ body {
   border: 1px solid #2a2a3a;
   border-radius: 10px;
   color: #e8e8f0;
-  font-size: 15px;
+  font-size: 14px;
   font-family: inherit;
   line-height: 1.7;
   padding: 14px 16px;
@@ -102,20 +119,27 @@ body {
 }
 
 .answer-input::placeholder {
-  color: #3a3a50;
+  color: #333348;
+  font-size: 13px;
 }
 
 .hint {
-  font-size: 12px;
-  color: #3a3a50;
+  font-size: 11px;
+  color: #333348;
   margin-top: 8px;
   margin-bottom: 24px;
 }
 
 .button-row {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  justify-content: flex-end;
+}
+
+.right-buttons {
+  display: flex;
+  gap: 10px;
 }
 
 .btn {
@@ -125,18 +149,17 @@ body {
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
-  padding: 10px 24px;
-  transition: opacity 0.15s, transform 0.1s;
+  padding: 10px 22px;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
 }
 
-.btn:active {
+.btn:active:not(:disabled) {
   transform: scale(0.97);
 }
 
 .btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-  transform: none;
 }
 
 .btn-primary {
@@ -157,12 +180,31 @@ body {
   background: #333348;
 }
 
+.btn-ghost {
+  background: transparent;
+  color: #555570;
+  padding: 10px 12px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: #a0a0c0;
+}
+
+/* Result screen */
 .title {
   font-size: 20px;
   font-weight: 700;
   color: #a78bfa;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
   text-align: center;
+}
+
+.result-note {
+  font-size: 13px;
+  color: #666680;
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.6;
 }
 
 .prompt-output {
@@ -171,11 +213,13 @@ body {
   border-radius: 10px;
   color: #c8c8e0;
   font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.8;
   margin-bottom: 24px;
   overflow-x: auto;
   padding: 20px;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
 }
