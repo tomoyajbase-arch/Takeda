@@ -10,7 +10,9 @@ export function MessageBubble({ message }: Props) {
   const isSecretary = message.role === "secretary";
 
   return (
-    <div className={`flex ${isSecretary ? "justify-start" : "justify-end"} animate-slide-up`}>
+    <div
+      className={`flex ${isSecretary ? "justify-start" : "justify-end"} animate-slide-up`}
+    >
       {isSecretary && (
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-sm mr-2 flex-shrink-0 mt-1">
           👩‍💼
