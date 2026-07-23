@@ -3,14 +3,14 @@
 GitHub Actionsで実行することを想定。
 """
 import os
-import base64
+import sys
 from datetime import datetime, timedelta
-from email.mime.text import MIMEText
 
 import pytz
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+
+sys.path.insert(0, os.path.dirname(__file__))
+from google_utils import get_credentials, send_gmail  # noqa: E402
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
@@ -20,19 +20,6 @@ SCOPES = [
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Tokyo")
 RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "tomoya.jbase@gmail.com")
 WEEKDAY_JA = ["月", "火", "水", "木", "金", "土", "日"]
-
-
-def get_credentials():
-    creds = Credentials(
-        token=None,
-        refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
-        client_id=os.environ["GOOGLE_CLIENT_ID"],
-        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=SCOPES,
-    )
-    creds.refresh(Request())
-    return creds
 
 
 def get_today_events(creds):
@@ -80,17 +67,8 @@ def format_schedule(events):
     return "\n\n".join(lines)
 
 
-def send_gmail(creds, subject, body):
-    service = build("gmail", "v1", credentials=creds)
-    message = MIMEText(body, "plain", "utf-8")
-    message["to"] = RECIPIENT_EMAIL
-    message["subject"] = subject
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-    service.users().messages().send(userId="me", body={"raw": raw}).execute()
-
-
 def main():
-    creds = get_credentials()
+    creds = get_credentials(SCOPES)
 
     tz = pytz.timezone(TIMEZONE)
     today = datetime.now(tz)
@@ -110,7 +88,7 @@ def main():
         f"よい一日をお過ごしください！"
     )
 
-    send_gmail(creds, subject, body)
+    send_gmail(creds, RECIPIENT_EMAIL, subject, body)
     print(f"✅ 送信完了: {subject}")
 
 
